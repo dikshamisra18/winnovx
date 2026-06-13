@@ -824,6 +824,8 @@ html, body { height: 100%; background: var(--bg-deep); color: var(--text-1); fon
 .adv-feasible.yes { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
 .adv-feasible.partial { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
 .adv-feasible.no { background: rgba(255,68,68,0.12); color: #ff4444; border: 1px solid rgba(255,68,68,0.2); }
+.adv-feasible.recommended { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+.adv-feasible.optimal { background: rgba(0,212,255,0.1); color: var(--cyan); border: 1px solid rgba(0,212,255,0.2); }
 
 .adv-new-u { font-size: 11px; font-weight: 600; text-align: right; }
 .adv-new-u.down { color: #22c55e; }

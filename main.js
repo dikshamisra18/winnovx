@@ -487,15 +487,56 @@ document.addEventListener('click', () => {
 })
 
 // ===== PRIVACY ADVISOR =====
-const FEASIBILITY = {
-  browser:  { level: 'yes',     label: 'Changeable',  desc: 'Switch to Firefox, Brave, or Tor Browser to reduce browser uniqueness.', newUsage: DB.browser.firefox },
-  language: { level: 'yes',     label: 'Adjustable',  desc: 'Add multiple languages or switch primary language to blend in.', newUsage: DB.language.eng },
-  screen:   { level: 'partial', label: 'Partially',   desc: 'Adjust zoom level or use a common resolution to reduce uniqueness.', newUsage: DB.screen['1920x1080'] },
-  os:       { level: 'partial', label: 'Partially',   desc: 'Consider a privacy-focused OS like Linux, though switching is significant effort.', newUsage: DB.os.windows },
-  timezone: { level: 'no',      label: 'Not feasible',desc: 'Timezone is tied to your physical location and cannot be realistically changed.', newUsage: null },
-  cpu:      { level: 'no',      label: 'Not feasible',desc: 'Hardware CPU cores cannot be modified.', newUsage: null },
-  memory:   { level: 'no',      label: 'Not feasible',desc: 'Physical device memory is fixed hardware.', newUsage: null },
-  webgl:    { level: 'no',      label: 'Not feasible',desc: 'GPU hardware cannot be changed; use WebGL blockers instead.', newUsage: null },
+// For each changeable metric, find the most common option (highest usage %, lowest uniqueness)
+const METRIC_OPTIONS = {
+  browser: {
+    level: 'yes', label: 'Changeable',
+    options: [
+      { name: 'Chrome', usage: DB.browser.chrome },
+      { name: 'Safari', usage: DB.browser.safari },
+      { name: 'Edge', usage: DB.browser.edge },
+      { name: 'Firefox', usage: DB.browser.firefox },
+      { name: 'Samsung Browser', usage: DB.browser.samsung },
+      { name: 'Opera', usage: DB.browser.opera },
+    ],
+  },
+  language: {
+    level: 'yes', label: 'Adjustable',
+    options: [
+      { name: 'English', usage: DB.language.eng },
+      { name: 'Spanish', usage: DB.language.spanish },
+      { name: 'German', usage: DB.language.german },
+      { name: 'Japanese', usage: DB.language.japanese },
+      { name: 'French', usage: DB.language.french },
+      { name: 'Portuguese', usage: DB.language.portuguese },
+    ],
+  },
+  screen: {
+    level: 'partial', label: 'Partially',
+    options: [
+      { name: '1920x1080', usage: DB.screen['1920x1080'] },
+      { name: '414x896', usage: DB.screen['414x896'] },
+      { name: '360x800', usage: DB.screen['360x800'] },
+      { name: '1280x1200', usage: DB.screen['1280x1200'] },
+      { name: '375x812', usage: DB.screen['375x812'] },
+      { name: '800x600', usage: DB.screen['800x600'] },
+    ],
+  },
+  os: {
+    level: 'partial', label: 'Partially',
+    options: [
+      { name: 'Android', usage: DB.os.android },
+      { name: 'Windows', usage: DB.os.windows },
+      { name: 'iOS', usage: DB.os.ios },
+      { name: 'macOS', usage: DB.os.macos },
+      { name: 'Linux', usage: DB.os.linux },
+      { name: 'ChromeOS', usage: DB.os.chromeos },
+    ],
+  },
+  timezone: { level: 'no', label: 'Not feasible', options: [] },
+  cpu:      { level: 'no', label: 'Not feasible', options: [] },
+  memory:   { level: 'no', label: 'Not feasible', options: [] },
+  webgl:    { level: 'no', label: 'Not feasible', options: [] },
 }
 
 let lastScanInfo = null
@@ -503,63 +544,87 @@ let lastScanUniqueness = null
 let lastScanRiskScore = null
 
 function buildAdvisorContent(info, uniqueness, currentRisk) {
-  const feasibleKeys = Object.entries(FEASIBILITY)
-    .filter(([, f]) => f.level !== 'no')
-    .map(([key]) => key)
+  const metricOrder = ['browser', 'language', 'screen', 'os', 'timezone', 'cpu', 'memory', 'webgl']
 
+  // For each changeable metric, find the best recommendation (highest usage %)
+  // Only recommend if that option has LOWER uniqueness than current
+  const recommendations = {}
   const newUniqueness = { ...uniqueness }
 
-feasibleKeys.forEach(key => {
-  const f = FEASIBILITY[key]
+  metricOrder.forEach(key => {
+    const opt = METRIC_OPTIONS[key]
+    if (opt.level === 'no') return
 
-  if (f.newUsage != null) {
-    let candidate = 1 - f.newUsage / 100
+    // Sort options by usage descending (most common first)
+    const sorted = [...opt.options].sort((a, b) => b.usage - a.usage)
+    const currentU = uniqueness[key]
 
-    if (candidate > 0.99)
-      candidate = 0.99
-
-    // Only apply if it IMPROVES privacy
-    if (candidate < newUniqueness[key]) {
-      newUniqueness[key] = candidate
+    // Find best option that reduces uniqueness (higher usage = lower uniqueness)
+    let bestOption = null
+    for (const choice of sorted) {
+      const candidateU = Math.min(1 - choice.usage / 100, 0.99)
+      // Only recommend if this option is more common (lower uniqueness) than current
+      if (candidateU < currentU) {
+        bestOption = { name: choice.name, usage: choice.usage, newU: candidateU }
+        break
+      }
     }
-  }
-})
+
+    if (bestOption) {
+      recommendations[key] = bestOption
+      newUniqueness[key] = bestOption.newU
+    }
+  })
 
   const newWeightedSum = Object.entries(WEIGHTS).reduce((sum, [key, w]) => sum + (newUniqueness[key] ?? 0) * w, 0)
   const newRisk = Math.round((newWeightedSum / TOTAL_WEIGHT) * 100)
   const riskDrop = currentRisk - newRisk
 
   let metricsHTML = ''
-  const metricOrder = ['browser', 'language', 'screen', 'os', 'timezone', 'cpu', 'memory', 'webgl']
   metricOrder.forEach(key => {
-    const f = FEASIBILITY[key]
+    const opt = METRIC_OPTIONS[key]
     const u = uniqueness[key]
     const pct = Math.round(u * 100)
-    const feasibleCls = f.level === 'yes' ? 'yes' : f.level === 'partial' ? 'partial' : 'no'
+    const feasibleCls = opt.level === 'yes' ? 'yes' : opt.level === 'partial' ? 'partial' : 'no'
 
+    let desc = ''
     let newUText = '--'
     let newUCls = 'same'
-    if (f.newUsage != null) {
-      const newU = newUniqueness[key]
-      const newPct = Math.round(newU * 100)
-      newUText = `${newPct}%`
-      newUCls = newPct < pct ? 'down' : 'same'
+
+    if (opt.level === 'no') {
+      desc = 'Cannot be changed — this is fixed hardware or location data.'
+      feasibleCls = 'no'
+    } else if (recommendations[key]) {
+      const rec = recommendations[key]
+      const recPct = Math.round(rec.newU * 100)
+      desc = `Switch to ${rec.name} (${rec.usage}% usage) to blend in with a larger crowd.`
+      newUText = `${recPct}%`
+      newUCls = recPct < pct ? 'down' : 'same'
+      feasibleCls = 'recommended'
+    } else {
+      desc = 'Already using a common option — no better alternative available.'
+      feasibleCls = 'optimal'
     }
 
     metricsHTML += `
       <div class="advisor-metric">
         <span class="adv-metric-name">${METRIC_META[key].label}</span>
-        <span class="adv-metric-action">${f.desc}</span>
-        <span class="adv-feasible ${feasibleCls}">${f.label}</span>
+        <span class="adv-metric-action">${desc}</span>
+        <span class="adv-feasible ${feasibleCls}">${opt.level === 'no' ? 'Not feasible' : (recommendations[key] ? 'Recommended' : 'Already optimal')}</span>
         <span class="adv-new-u ${newUCls}">${newUText}</span>
       </div>
     `
   })
 
+  const changeableKeys = Object.keys(recommendations)
+  const changeDesc = changeableKeys.length > 0
+    ? changeableKeys.map(k => METRIC_META[k].label.toLowerCase()).join(', ')
+    : ''
+
   return `
     <div class="advisor-summary">
       <div class="advisor-summary-text">
-        Your current risk score is <strong>${currentRisk}/100</strong>. The advisor identifies which fingerprint attributes can realistically be changed and simulates the potential impact on your trackability.
+        Your current risk score is <strong>${currentRisk}/100</strong>. The advisor analyzes which fingerprint attributes can be changed to ones with higher market share, reducing your uniqueness and making you harder to track.
       </div>
     </div>
     <div class="advisor-section-title">METRIC ANALYSIS</div>
@@ -578,8 +643,8 @@ feasibleKeys.forEach(key => {
       </div>
       <div class="adv-result-desc">
         ${riskDrop > 0
-          ? `By changing the feasible attributes (browser, language, and partially screen/OS), your risk score could drop by <strong>${riskDrop} points</strong>. The remaining score comes from hardware attributes (CPU, memory, GPU, timezone) that cannot be altered.`
-          : 'Your feasible attributes are already relatively common. Consider using browser extensions that block or randomize fingerprinting APIs for further protection.'}
+          ? `Switching to more common options for ${changeDesc} could reduce your risk score by <strong>${riskDrop} points</strong>. Hardware attributes (CPU, memory, GPU, timezone) cannot be changed — consider browser extensions that randomize fingerprinting APIs for further protection.`
+          : 'Your changeable attributes are already using the most common options available. Consider using browser extensions that block or randomize fingerprinting APIs for further protection.'}
       </div>
     </div>
   `
