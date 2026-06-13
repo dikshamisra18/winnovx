@@ -585,7 +585,7 @@ function buildAdvisorContent(info, uniqueness, currentRisk) {
     const opt = METRIC_OPTIONS[key]
     const u = uniqueness[key]
     const pct = Math.round(u * 100)
-    const feasibleCls = opt.level === 'yes' ? 'yes' : opt.level === 'partial' ? 'partial' : 'no'
+    let feasibleCls = opt.level === 'yes' ? 'yes' : opt.level === 'partial' ? 'partial' : 'no'
 
     let desc = ''
     let newUText = '--'
